@@ -1,40 +1,82 @@
-use std::ops::RangeInclusive;
+use clap::{Arg, Command};
+use grep::{grep, Config};
 
-use clap::Parser;
+const PATTERNS: &str = "PATTERNS";
+const FILE: &str = "FILE";
+const LINE_NUMBER: &str = "line-number";
+const RECURSIVE: &str = "recursive";
+const DEREFERENCE_RECURSIVE: &str = "dereference-recursive";
+const IGNORE_CASE: &str = "ignore-case";
+const EXCLUDE_DIR: &str = "exclude-dir";
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// Network port to use
-    #[arg(value_parser = port_in_range)]
-    port: u16,
-
-    #[arg(value_parser = port_in_range)]
-    ip: u16,
-
-}
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
-    let cli = Cli::parse();
+    let matches = Command::new("perg")
+        .version(VERSION)
+        .author("Federico Guerinoni <guerinoni.federico@gmail.com>")
+        .about("grep like tool. Search for PATTERNS in each FILE.")
+        .arg(
+            Arg::new(PATTERNS)
+                .required(true)
+                .help("can contain multiple patterns separated by newlines"),
+        )
+        .arg(
+            Arg::new(FILE)
+                .min_values(1)
+                .help("when FILE is '-', read standard input"),
+        )
+        .arg(
+            Arg::new(LINE_NUMBER)
+                .long("line-number")
+                .short('n')
+                .help("print line number with output lines")
+                .display_order(1),
+        )
+        .arg(
+            Arg::new(RECURSIVE)
+                .long("recursive")
+                .short('r')
+                .help("search recursive in folders.")
+                .display_order(2),
+        )
+        .arg(
+            Arg::new(DEREFERENCE_RECURSIVE)
+                .long("dereference-recursive")
+                .short('R')
+                .help("likewise, but follow all symlinks")
+                .display_order(3),
+        )
+        .arg(
+            Arg::new(EXCLUDE_DIR)
+                .long("--exclude-dir")
+                .number_of_values(1)
+                .help("skip directories that match GLOB")
+                .display_order(4),
+        )
+        .arg(
+            Arg::new(IGNORE_CASE)
+                .long("ignore-case")
+                .short('i')
+                .help("ignore case distinctions in patterns and data.")
+                .display_order(0),
+        )
+        .get_matches();
 
-    println!("PORT = {}", cli.port);
+    let c = Config::new(
+        matches.value_of(PATTERNS).unwrap(),
+        matches.values_of(FILE).unwrap_or_default().collect(),
+        matches.is_present(LINE_NUMBER),
+        matches.is_present(RECURSIVE),
+        matches.is_present(DEREFERENCE_RECURSIVE),
+        matches.is_present(IGNORE_CASE),
+        matches.value_of(EXCLUDE_DIR),
+    );
 
-    println!("idk = {}", cli.port);
-}
-
-const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
-
-fn port_in_range(s: &str) -> Result<u16, String> {
-    let port: usize = s
-        .parse()
-        .map_err(|_| format!("`{s}` isn't a port number"))?;
-    if PORT_RANGE.contains(&port) {
-        Ok(port as u16)
-    } else {
-        Err(format!(
-            "port not in range {}-{}",
-            PORT_RANGE.start(),
-            PORT_RANGE.end()
-        ))
+    match grep(c) {
+        Ok(results) => {
+            results.iter().for_each(|item| println!("{}", item));
+        }
+        Err(e) => println!("{}", e),
     }
 }
